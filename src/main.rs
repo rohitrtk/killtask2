@@ -1,6 +1,6 @@
 mod util;
 
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitCode, Stdio};
 use std::collections::HashSet;
 use util::prettify_strings;
 use colored::*;
@@ -89,11 +89,11 @@ fn kill_pids(pids: HashSet<u32>) -> Result<(), String>{
     Ok(())
 }
 
-fn main() {
+fn main() -> std::process::ExitCode {
     let ports = match get_ports_from_args() {
         Some(ports) => ports,
         None => {
-            return;
+            return ExitCode::SUCCESS;
         }
     };
 
@@ -111,10 +111,12 @@ fn main() {
     let pids = find_pids(ports);
     if pids.is_empty() {
         println!("{}", format!("Found no processes running on the given ports.").yellow());
-        return;
+        return ExitCode::SUCCESS;
     }
 
     println!("Found PIDs: {:?}", pids);
 
     let _ = kill_pids(pids);
+
+    ExitCode::SUCCESS
 }
