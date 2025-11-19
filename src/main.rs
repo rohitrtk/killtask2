@@ -1,32 +1,19 @@
+mod util;
+
 use std::process::{Command, Stdio};
-use std::str;
-use std::env;
-use colored::*;
 use std::collections::HashSet;
+use util::prettify_strings;
+use colored::*;
 
-fn prettify_strings(strings: Vec<String>) -> String {
-    if strings.len() == 0 {
-        return "".to_string();
-    } else if strings.len() == 1 {
-        return format!("{}", strings[0]);
-    } else if strings.len() == 2 {
-        return format!("{} and {}", strings[0], strings[1]);
-    } else {
-        let before_last = &strings[0..strings.len() - 1].join(", ");
-        let last = strings.last().unwrap();
-        return format!("{}, and {}", before_last, last);
-    }
-}
-
-fn main() {
+fn get_ports_from_args() -> Option<Vec<u16>> {
+    use std::env;
+    
     let args: Vec<String> = env::args().skip(1).collect();
-
     if args.is_empty() {
         println!("Usage: taskkill2 <port1> <port2> <port3> ...");
-        return;
+        return None;
     }
 
-    // Preserving the order ports were passed in
     let mut ports = HashSet::new();
     let mut unique_ports = vec![];
     for arg in args {
@@ -38,22 +25,15 @@ fn main() {
             },
             Err(_) => {
                 eprintln!("{}", format!("Invalid port number supplied: {}", arg).red());
-                return;
+                return None;
             }
         }
     };
 
-    let formatted_ports: String = prettify_strings(unique_ports
-            .clone()
-            .into_iter()
-            .collect::<Vec<u16>>()
-            .into_iter()
-            .map(|p| p.to_string())
-            .collect::<Vec<String>>()
-        );
+    Some(unique_ports)
+}
 
-    println!("{}", format!("Searching for processes listening on ports: {}", formatted_ports).yellow());
-
+fn find_pids(ports: Vec<u16>) -> HashSet<u32> {
     let output = Command::new("netstat")
         .args(&["-ano"])
         .stdout(Stdio::piped())
@@ -64,7 +44,7 @@ fn main() {
         .expect(&"Unable to parse netstat output".red());
 
     let mut pids = HashSet::new();
-    for port in unique_ports {
+    for port in ports {
         for line in stdout.lines() {
             let line = line.trim();
     
@@ -79,13 +59,10 @@ fn main() {
         }
     }
 
-    if pids.is_empty() {
-        println!("{}", format!("Found no processes running on the given ports.").yellow());
-        return;
-    }
+    pids
+}
 
-    println!("Found PIDs: {:?}", pids);
-
+fn kill_pids(pids: HashSet<u32>) -> Result<(), String>{
     for pid in pids {
         println!("{}", format!("Attempting to kill PID {}", pid).yellow());
 
@@ -108,4 +85,36 @@ fn main() {
             println!("{}", format!("Failed to kill PID {}: {}", pid, err).red());
         }
     }
+
+    Ok(())
+}
+
+fn main() {
+    let ports = match get_ports_from_args() {
+        Some(ports) => ports,
+        None => {
+            return;
+        }
+    };
+
+    let formatted_ports: String = prettify_strings(ports
+            .clone()
+            .into_iter()
+            .collect::<Vec<u16>>()
+            .into_iter()
+            .map(|p| p.to_string())
+            .collect::<Vec<String>>()
+        );
+
+    println!("{}", format!("Searching for processes listening on ports: {}", formatted_ports).yellow());
+
+    let pids = find_pids(ports);
+    if pids.is_empty() {
+        println!("{}", format!("Found no processes running on the given ports.").yellow());
+        return;
+    }
+
+    println!("Found PIDs: {:?}", pids);
+
+    let _ = kill_pids(pids);
 }
